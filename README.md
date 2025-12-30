@@ -38,5 +38,21 @@ sudo ./install.sh
 1. Copy `hanuchi` to `/usr/bin/` and make it executable.
 2. Copy `hanuchi.desktop` to `/usr/share/applications/`.
 
+## Removal
+
+### Arch Based Distributions
+Remove using the pacman package manager.
+
+```bash
+sudo pacman -R hanuchi
+```
+
+### Other Distributions
+Use the uninstaller script (requires root):
+
+```bash
+sudo ./uninstall.sh
+```
+
 ## License
 MIT License.
