@@ -7,14 +7,10 @@
 Hanuchi is a lightweight, utility-first GUI for managing LogMeIn Hamachi networks on Linux.
 Designed for modern GNOME environments (Wayland supported), strictly following the philosophy of keeping the tool clean, native, and bloat-free.
 
-No ads. No political banners. No legacy dependencies. Just network management.
-
 ## Features
 * **Native Experience:** Written in Python using GTK4 and Libadwaita.
-* **Context-Aware:** Smart actions ("Leave" for members, "Delete" for owners).
 * **System Integration:** Controls the `logmein-hamachi` systemd service automatically via PolicyKit.
-* **Localization:** English / Russian (Auto-detected).
-* **Clipboard Ready:** Click any field (IP, ID) to copy.
+* **Localization:** English / Russian
 
 ## Requirements
 * Python 3.10+
