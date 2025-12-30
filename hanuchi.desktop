@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hanuchi
+Comment=Manage Hamachi Networks
+Exec=/usr/bin/hanuchi
+Icon=hanuchi
+Terminal=false
+Categories=Network;
+StartupWMClass=hanuchi

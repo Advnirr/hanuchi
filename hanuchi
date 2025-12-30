@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+import sys
+import subprocess
+import os
+import threading
+import json
+import locale
+import time
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, Gio, GLib, Gdk
+
+CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "hanuchi")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+TRANSLATIONS = {
+    "en": {
+        "title": "Hanuchi",
+        "status_sys": "System Status",
+        "status": "Status",
+        "ip": "IP Address",
+        "nick": "Nickname",
+        "ver": "Version",
+        "no_net": "No Networks",
+        "info": "Info",
+        "id": "ID",
+        "cap": "Capacity",
+        "members": "Members",
+        "no_peers": "No active peers",
+        "leave": "Leave Network",
+        "delete": "Delete Network",
+        "join": "Join Network",
+        "create": "Create Network",
+        "pass_opt": "Password (Optional)",
+        "settings": "Settings",
+        "language": "Language",
+        "restart_msg": "Restart application to apply language changes.",
+        "btn_join": "Join",
+        "btn_create": "Create",
+        "err_status": "Daemon is likely not running.",
+        "btn_start_daemon": "Start Hamachi Daemon",
+        "daemon_starting": "Starting daemon..."
+    },
+    "ru": {
+        "title": "Hanuchi",
+        "status_sys": "Системный статус",
+        "status": "Статус",
+        "ip": "IP адрес",
+        "nick": "Никнейм",
+        "ver": "Версия",
+        "no_net": "Нет сетей",
+        "info": "Информация",
+        "id": "ID сети",
+        "cap": "Емкость",
+        "members": "Участники",
+        "no_peers": "Нет активных пиров",
+        "leave": "Покинуть сеть",
+        "delete": "Удалить сеть",
+        "join": "Подключиться",
+        "create": "Создать сеть",
+        "pass_opt": "Пароль (необязательно)",
+        "settings": "Настройки",
+        "language": "Язык",
+        "restart_msg": "Перезапустите приложение для смены языка.",
+        "btn_join": "Войти",
+        "btn_create": "Создать",
+        "err_status": "Демон Hamachi не запущен.",
+        "btn_start_daemon": "Запустить демон Hamachi",
+        "daemon_starting": "Запуск демона..."
+    }
+}
+
+class ConfigManager:
+    @staticmethod
+    def load():
+        if not os.path.exists(CONFIG_DIR):
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        if not os.path.exists(CONFIG_FILE):
+            sys_lang = "en"
+            try:
+                loc = locale.getdefaultlocale()[0]
+                if loc and "ru" in loc.lower():
+                    sys_lang = "ru"
+            except: pass
+            default_conf = {"language": sys_lang}
+            ConfigManager.save(default_conf)
+            return default_conf
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {"language": "en"}
+
+    @staticmethod
+    def save(conf):
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(conf, f)
+        except: pass
+
+CURRENT_CONFIG = ConfigManager.load()
+LANG_CODE = CURRENT_CONFIG.get("language", "en")
+if LANG_CODE not in TRANSLATIONS: LANG_CODE = "en"
+
+def tr(key):
+    return TRANSLATIONS[LANG_CODE].get(key, key)
+
+def log(msg):
+    print(f"[Hanuchi] {msg}", flush=True)
+
+class HamachiBackend:
+    @staticmethod
+    def _run_hamachi(args):
+        paths = ["/usr/bin/hamachi", "/opt/logmein-hamachi/bin/hamachi", "hamachi"]
+        exe = None
+        for p in paths:
+            if os.path.exists(p) and os.access(p, os.X_OK):
+                exe = p
+                break
+        if not exe: exe = "hamachi"
+        cmd = [exe] + args
+        log(f"Exec: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return result.stdout
+        except Exception as e:
+            log(f"CRITICAL EXEC ERROR: {e}")
+            return ""
+
+    @staticmethod
+    def get_self_info():
+        raw = HamachiBackend._run_hamachi([])
+        if not raw or "does not seem to be running" in raw: return {}
+        info = {}
+        for line in raw.split('\n'):
+            if ':' in line:
+                key, val = line.split(':', 1)
+                info[key.strip().lower()] = val.strip()
+        return info
+
+    @staticmethod
+    def start_daemon_pkexec():
+        log("Attempting to start daemon via pkexec...")
+        try:
+            subprocess.run(["pkexec", "systemctl", "start", "logmein-hamachi"], check=True)
+            time.sleep(2) 
+            return True
+        except subprocess.CalledProcessError:
+            log("Failed to start daemon via pkexec (user cancelled or error)")
+            return False
+
+    @staticmethod
+    def get_networks():
+        raw = HamachiBackend._run_hamachi(['list'])
+        if not raw: return []
+        networks = []
+        lines = raw.split('\n')
+        current_net = None
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            if '[' in line and 'capacity' in line:
+                try:
+                    parts_bracket = line.split(']')
+                    net_id = parts_bracket[0].split('[')[-1].strip()
+                    right_part = parts_bracket[1]
+                    cap_split = right_part.split('capacity:')
+                    net_name = cap_split[0].strip() or net_id
+                    rest = cap_split[1]
+                    capacity = rest.split(',')[0].strip()
+                    status = "Ready"
+                    if "status:" in rest:
+                        status = rest.split('status:')[1].split(',')[0].strip()
+                    elif "owner" in rest:
+                        status = "Hosted"
+                    current_net = {'id': net_id, 'name': net_name, 'capacity': capacity, 'status': status, 'members': []}
+                    networks.append(current_net)
+                    continue
+                except: pass
+            if current_net is not None and ("25." in line or "2620:" in line):
+                parts = line.split()
+                if len(parts) >= 3:
+                    ip = next((p for p in parts if p.startswith("25.") or p.startswith("2620:")), "Unknown")
+                    alias = parts[2] if len(parts) > 2 else "Unknown"
+                    current_net['members'].append({'id': 'N/A', 'alias': alias, 'ip': ip})
+        return networks
+
+    @staticmethod
+    def run_cmd_bg(cmd):
+        HamachiBackend._run_hamachi([cmd])
+    @staticmethod
+    def join_network(nid, pw):
+        args = ['join', nid]
+        if pw: args.append(pw)
+        return HamachiBackend._run_hamachi(args)
+    @staticmethod
+    def create_network(nid, pw):
+        args = ['create', nid]
+        if pw: args.append(pw)
+        return HamachiBackend._run_hamachi(args)
+    @staticmethod
+    def leave_network(nid):
+        return HamachiBackend._run_hamachi(['leave', nid])
+    @staticmethod
+    def delete_network(nid):
+        return HamachiBackend._run_hamachi(['delete', nid])
+
+class SettingsDialog(Gtk.Window):
+    def __init__(self, parent):
+        super().__init__(transient_for=parent, modal=True, title=tr("settings"))
+        self.set_default_size(300, 200)
+        self.set_resizable(False)
+        
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(20); box.set_margin_bottom(20); box.set_margin_start(20); box.set_margin_end(20)
+        self.set_child(box)
+
+        lbl = Gtk.Label(label=tr("language"), xalign=0)
+        lbl.add_css_class("heading")
+        box.append(lbl)
+
+        self.combo = Gtk.ComboBoxText()
+        self.combo.append("en", "English")
+        self.combo.append("ru", "Русский")
+        self.combo.set_active_id(LANG_CODE)
+        self.combo.connect("changed", self.on_change)
+        box.append(self.combo)
+
+        self.info_lbl = Gtk.Label(label="")
+        self.info_lbl.set_wrap(True)
+        self.info_lbl.add_css_class("dim-label")
+        box.append(self.info_lbl)
+
+    def on_change(self, combo):
+        new_lang = combo.get_active_id()
+        if new_lang != LANG_CODE:
+            cfg = ConfigManager.load()
+            cfg["language"] = new_lang
+            ConfigManager.save(cfg)
+            self.info_lbl.set_label(tr("restart_msg"))
+
+class NetworkDialog(Gtk.Window):
+    def __init__(self, parent, action_name, action_code, callback):
+        super().__init__(transient_for=parent, modal=True, title=action_name)
+        self.set_default_size(300, 180)
+        self.set_resizable(False)
+        self.callback = callback
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(20); box.set_margin_bottom(20); box.set_margin_start(20); box.set_margin_end(20)
+        self.set_child(box)
+        self.id_entry = Gtk.Entry(placeholder_text=tr("id"))
+        self.pass_entry = Gtk.Entry(placeholder_text=tr("pass_opt")); self.pass_entry.set_visibility(False)
+        box.append(Gtk.Label(label=tr("id"), xalign=0)); box.append(self.id_entry)
+        box.append(Gtk.Label(label="Password", xalign=0)); box.append(self.pass_entry)
+        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10); btn_box.set_halign(Gtk.Align.END)
+        do_btn = Gtk.Button(label=action_code); do_btn.add_css_class("suggested-action")
+        do_btn.connect("clicked", lambda x: self.on_confirm())
+        btn_box.append(do_btn); box.append(btn_box)
+    def on_confirm(self):
+        if self.id_entry.get_text():
+            self.callback(self.id_entry.get_text(), self.pass_entry.get_text())
+            self.destroy()
+
+class HanuchiWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title=tr("title"))
+        self.set_default_size(860, 580)
+        self.set_resizable(False)
+        self.set_icon_name("hanuchi")
+        self.auto_start_attempted = False
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.set_content(main_box)
+
+        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); sidebar.set_size_request(250, -1)
+        header_l = Gtk.HeaderBar(); header_l.set_show_title_buttons(False)
+        home_btn = Gtk.Button(icon_name="go-home-symbolic"); home_btn.connect("clicked", self.go_dashboard); header_l.pack_start(home_btn)
+        
+        add_btn = Gtk.MenuButton(icon_name="open-menu-symbolic")
+        menu = Gio.Menu()
+        menu.append(tr("join"), "app.join_network")
+        menu.append(tr("create"), "app.create_network")
+        section = Gio.Menu()
+        section.append(tr("settings"), "app.settings")
+        menu.append_section(None, section)
+        
+        add_btn.set_menu_model(menu); header_l.pack_start(add_btn)
+        refresh_btn = Gtk.Button(icon_name="view-refresh-symbolic"); refresh_btn.connect("clicked", self.refresh_data); header_l.pack_end(refresh_btn)
+        self.list_box = Gtk.ListBox(); self.list_box.add_css_class("navigation-sidebar"); self.list_box.connect("row-selected", self.on_network_selected)
+        scrolled = Gtk.ScrolledWindow(); scrolled.set_child(self.list_box); scrolled.set_vexpand(True)
+        sidebar.append(header_l); sidebar.append(scrolled)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); content_box.set_hexpand(True)
+        header_r = Gtk.HeaderBar(); header_r.set_show_title_buttons(True)
+        self.spinner = Gtk.Spinner(); header_r.pack_end(self.spinner)
+        self.power_btn = Gtk.Button(); self.power_btn.connect("clicked", self.on_power_clicked); header_r.pack_end(self.power_btn)
+        content_box.append(header_r)
+        
+        self.stack = Gtk.Stack(); self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.dash_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self.dash_page.set_margin_top(30); self.dash_page.set_margin_start(30); self.dash_page.set_margin_end(30)
+        self.stack.add_named(self.dash_page, "dashboard")
+        self.net_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self.net_page.set_margin_top(30); self.net_page.set_margin_start(30); self.net_page.set_margin_end(30)
+        self.stack.add_named(self.net_page, "details")
+        content_box.append(self.stack)
+
+        main_box.append(sidebar); main_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)); main_box.append(content_box)
+
+        # Actions
+        action_join = Gio.SimpleAction.new("join_network", None)
+        # Оборачиваем в run_bg для автообновления списка
+        action_join.connect("activate", lambda a,p: NetworkDialog(self, tr("join"), tr("btn_join"), 
+            lambda i, pw: self.run_bg(lambda: HamachiBackend.join_network(i, pw))).present())
+        app.add_action(action_join)
+
+        action_create = Gio.SimpleAction.new("create_network", None)
+        # Оборачиваем в run_bg для автообновления списка
+        action_create.connect("activate", lambda a,p: NetworkDialog(self, tr("create"), tr("btn_create"), 
+            lambda i, pw: self.run_bg(lambda: HamachiBackend.create_network(i, pw))).present())
+        app.add_action(action_create)
+
+        action_settings = Gio.SimpleAction.new("settings", None)
+        action_settings.connect("activate", lambda a,p: SettingsDialog(self).present())
+        app.add_action(action_settings)
+
+        self.networks_data = []; self.current_net_id = None
+        GLib.idle_add(self.refresh_data, None)
+
+    def go_dashboard(self, btn):
+        self.list_box.unselect_all()
+        self.stack.set_visible_child_name("dashboard")
+    def clean_box(self, box):
+        while True:
+            child = box.get_first_child()
+            if not child: break
+            box.remove(child)
+    def add_row(self, group, title, value, copy=False):
+        row = Adw.ActionRow(); row.set_title(title)
+        if copy:
+            row.set_subtitle(str(value))
+            btn = Gtk.Button(icon_name="edit-copy-symbolic"); btn.add_css_class("flat")
+            btn.connect("clicked", lambda b: Gdk.Display.get_default().get_clipboard().set(str(value)))
+            row.add_suffix(btn)
+        else:
+            lbl = Gtk.Label(label=str(value)); lbl.add_css_class("dim-label"); row.add_suffix(lbl)
+        group.add(row)
+
+    def start_daemon_bg(self):
+        self.spinner.start()
+        self.clean_box(self.dash_page)
+        l = Gtk.Label(label=tr("daemon_starting")); l.add_css_class("title-2"); self.dash_page.append(l)
+        def job():
+            HamachiBackend.start_daemon_pkexec()
+            GLib.idle_add(self.refresh_data, None)
+        threading.Thread(target=job, daemon=True).start()
+
+    def refresh_data(self, widget):
+        info = HamachiBackend.get_self_info()
+        self.clean_box(self.dash_page)
+        
+        if not info:
+            if not self.auto_start_attempted:
+                self.auto_start_attempted = True
+                self.start_daemon_bg()
+                return
+            title = Gtk.Label(label=tr("status_sys"), xalign=0); title.add_css_class("title-1"); self.dash_page.append(title)
+            err = Gtk.Label(label=tr("err_status")); err.add_css_class("error"); err.set_margin_bottom(15); self.dash_page.append(err)
+            btn_start = Gtk.Button(label=tr("btn_start_daemon"))
+            btn_start.add_css_class("suggested-action"); btn_start.add_css_class("pill")
+            btn_start.set_halign(Gtk.Align.CENTER)
+            btn_start.connect("clicked", lambda x: self.start_daemon_bg())
+            self.dash_page.append(btn_start)
+            self.clean_box(self.list_box)
+            self.spinner.stop()
+            return
+        else:
+            self.auto_start_attempted = True 
+
+        title = Gtk.Label(label=tr("status_sys"), xalign=0); title.add_css_class("title-1"); self.dash_page.append(title)
+        grp = Adw.PreferencesGroup(); self.dash_page.append(grp)
+        status = info.get('status', 'Unknown')
+        self.add_row(grp, tr("status"), status)
+        is_online = "logged in" in status.lower()
+        self.power_btn.is_online = is_online
+        if is_online:
+            self.power_btn.set_icon_name("media-playback-stop-symbolic")
+            self.power_btn.add_css_class("destructive-action")
+            self.power_btn.remove_css_class("suggested-action")
+        else:
+            self.power_btn.set_icon_name("media-playback-start-symbolic")
+            self.power_btn.add_css_class("suggested-action")
+            self.power_btn.remove_css_class("destructive-action")
+        if 'address' in info: self.add_row(grp, tr("ip"), info['address'], copy=True)
+        if 'nickname' in info: self.add_row(grp, tr("nick"), info['nickname'])
+        if 'version' in info: self.add_row(grp, tr("ver"), info['version'])
+
+        self.clean_box(self.list_box)
+        self.networks_data = HamachiBackend.get_networks()
+        if not self.networks_data:
+            lbl = Gtk.Label(label=tr("no_net")); lbl.add_css_class("dim-label"); lbl.set_margin_top(20); self.list_box.append(lbl)
+            self.stack.set_visible_child_name("dashboard")
+        else:
+            for net in self.networks_data:
+                row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+                row.set_margin_top(10); row.set_margin_bottom(10); row.set_margin_start(10)
+                name_lbl = Gtk.Label(label=net['name'], xalign=0); name_lbl.add_css_class("heading"); name_lbl.set_ellipsize(3); row.append(name_lbl)
+                status_txt = f"{net['id']}"
+                if net['status'] != "Ready": status_txt += f" • {net['status']}"
+                id_lbl = Gtk.Label(label=status_txt, xalign=0); id_lbl.add_css_class("caption"); id_lbl.add_css_class("dim-label"); row.append(id_lbl)
+                lrow = Gtk.ListBoxRow(); lrow.set_child(row); lrow.net_id = net['id']; self.list_box.append(lrow)
+        
+        self.spinner.stop()
+        if not self.list_box.get_selected_row():
+            self.stack.set_visible_child_name("dashboard")
+        else:
+            self.on_network_selected(self.list_box, self.list_box.get_selected_row())
+
+    def on_network_selected(self, box, row):
+        if not row or not hasattr(row, 'net_id'): return
+        self.stack.set_visible_child_name("details")
+        net = next((n for n in self.networks_data if n['id'] == row.net_id), None)
+        if not net: return
+        self.current_net_id = net['id']
+        self.clean_box(self.net_page)
+        t = Gtk.Label(label=net['name'], xalign=0); t.add_css_class("title-1"); self.net_page.append(t)
+        lbl_info = Gtk.Label(label=tr("info"), xalign=0); lbl_info.add_css_class("title-2"); lbl_info.set_margin_bottom(5); self.net_page.append(lbl_info)
+        grp_info = Adw.PreferencesGroup(); self.net_page.append(grp_info)
+        self.add_row(grp_info, tr("id"), net['id'], copy=True)
+        self.add_row(grp_info, tr("cap"), net['capacity'])
+        self.add_row(grp_info, tr("status"), net['status'])
+        lbl_mem = Gtk.Label(label=tr("members"), xalign=0); lbl_mem.add_css_class("title-2"); lbl_mem.set_margin_bottom(5); self.net_page.append(lbl_mem)
+        grp_mem = Adw.PreferencesGroup(); self.net_page.append(grp_mem)
+        if not net['members']: grp_mem.set_description(tr("no_peers"))
+        else:
+            for m in net['members']: self.add_row(grp_mem, m['alias'], m['ip'], copy=True)
+        
+        is_owner = (net['status'] == 'Hosted')
+        if is_owner:
+            btn_action = Gtk.Button(label=tr("delete")); btn_action.add_css_class("destructive-action")
+            btn_action.connect("clicked", lambda b: self.run_bg(lambda: HamachiBackend.delete_network(self.current_net_id)))
+        else:
+            btn_action = Gtk.Button(label=tr("leave")); btn_action.add_css_class("destructive-action")
+            btn_action.connect("clicked", lambda b: self.run_bg(lambda: HamachiBackend.leave_network(self.current_net_id)))
+            
+        self.net_page.append(btn_action)
+
+    def on_power_clicked(self, btn):
+        self.power_btn.set_sensitive(False); self.spinner.start()
+        cmd = 'logoff' if getattr(self.power_btn, 'is_online', False) else 'login'
+        self.run_bg(lambda: HamachiBackend.run_cmd_bg(cmd))
+    
+    def run_bg(self, func):
+        # Запускает функцию в фоне, ждет, потом обновляет UI
+        def job():
+            func()
+            # Важно! Хамачи обновляет списки не мгновенно. Дадим ему секунду "продышаться".
+            time.sleep(1.0)
+            GLib.idle_add(lambda: (self.spinner.stop(), self.power_btn.set_sensitive(True), self.refresh_data(None)))
+        
+        self.spinner.start()
+        threading.Thread(target=job, daemon=True).start()
+
+class HanuchiApp(Adw.Application):
+    def __init__(self): super().__init__(application_id="com.github.hanuchi", flags=Gio.ApplicationFlags.FLAGS_NONE)
+    def do_activate(self):
+        win = self.props.active_window
+        if not win: win = HanuchiWindow(self)
+        win.present()
+
+if __name__ == '__main__':
+    GLib.set_prgname('hanuchi')
+    app = HanuchiApp()
+    sys.exit(app.run(sys.argv))
