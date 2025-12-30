@@ -1,6 +1,6 @@
 # Maintainer: Inklare <vnaosov@gmail.com>
 pkgname=hanuchi
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Minimalist GTK4 frontend for LogMeIn Hamachi"
 arch=('any')
