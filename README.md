@@ -27,6 +27,12 @@ cd pkg/
 makepkg -si
 ```
 
+Also you can install Hanuchi from AUR using Yay:
+
+```bash
+yay -S hanuchi
+```
+
 ### Other Distributions (Ubuntu, Fedora, Debian)
 Use the universal installer script (requires root):
 
