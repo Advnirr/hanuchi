@@ -17,7 +17,6 @@ chmod +x /usr/bin/hanuchi
 
 cp hanuchi.desktop /usr/share/applications/
 
-# ТУТ ИСПРАВИЛ
 if [ -f "assets/hanuchi.svg" ]; then
     mkdir -p /usr/share/icons/hicolor/scalable/apps/
     cp assets/hanuchi.svg /usr/share/icons/hicolor/scalable/apps/hanuchi.svg
