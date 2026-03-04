@@ -17,7 +17,6 @@ package() {
     install -Dm755 "hanuchi" "${pkgdir}/usr/bin/hanuchi"
     install -Dm644 "hanuchi.desktop" "${pkgdir}/usr/share/applications/hanuchi.desktop"
     
-    # ТУТ ИСПРАВИЛ: ищем assets/hanuchi.svg
     install -Dm644 "assets/hanuchi.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/hanuchi.svg"
     
     install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
