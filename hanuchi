@@ -453,10 +453,8 @@ class HanuchiWindow(Adw.ApplicationWindow):
         self.run_bg(lambda: HamachiBackend.run_cmd_bg(cmd))
     
     def run_bg(self, func):
-        # Запускает функцию в фоне, ждет, потом обновляет UI
         def job():
             func()
-            # Важно! Хамачи обновляет списки не мгновенно. Дадим ему секунду "продышаться".
             time.sleep(1.0)
             GLib.idle_add(lambda: (self.spinner.stop(), self.power_btn.set_sensitive(True), self.refresh_data(None)))
         
