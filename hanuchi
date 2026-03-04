@@ -309,15 +309,12 @@ class HanuchiWindow(Adw.ApplicationWindow):
 
         main_box.append(sidebar); main_box.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)); main_box.append(content_box)
 
-        # Actions
         action_join = Gio.SimpleAction.new("join_network", None)
-        # Оборачиваем в run_bg для автообновления списка
         action_join.connect("activate", lambda a,p: NetworkDialog(self, tr("join"), tr("btn_join"), 
             lambda i, pw: self.run_bg(lambda: HamachiBackend.join_network(i, pw))).present())
         app.add_action(action_join)
 
         action_create = Gio.SimpleAction.new("create_network", None)
-        # Оборачиваем в run_bg для автообновления списка
         action_create.connect("activate", lambda a,p: NetworkDialog(self, tr("create"), tr("btn_create"), 
             lambda i, pw: self.run_bg(lambda: HamachiBackend.create_network(i, pw))).present())
         app.add_action(action_create)
