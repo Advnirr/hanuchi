@@ -10,6 +10,7 @@ Designed for modern GNOME environments (Wayland supported), strictly following t
 ## Features
 * **Native Experience:** Written in Python using GTK4 and Libadwaita.
 * **System Integration:** Controls the `logmein-hamachi` systemd service automatically via PolicyKit.
+* **Zero-config Setup:** Automatically starts the daemon and registers your node with Hamachi on first launch — no terminal required.
 * **Localization:** English / Russian
 
 ## Requirements

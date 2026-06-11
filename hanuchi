@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import sys
-import subprocess
+import subprocess  # nosec B404 - used only with fixed argument lists, never shell=True
 import os
+import shutil
 import threading
 import json
-import locale
 import time
 import gi
 
@@ -14,6 +14,9 @@ from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "hanuchi")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+def log(msg):
+    print(f"[Hanuchi] {msg}", flush=True)
 
 TRANSLATIONS = {
     "en": {
@@ -33,7 +36,7 @@ TRANSLATIONS = {
         "delete": "Delete Network",
         "join": "Join Network",
         "create": "Create Network",
-        "pass_opt": "Password (Optional)",
+        "pass_opt": "Password (Optional)",  # nosec B105 - UI label, not a credential
         "settings": "Settings",
         "language": "Language",
         "restart_msg": "Restart application to apply language changes.",
@@ -41,7 +44,8 @@ TRANSLATIONS = {
         "btn_create": "Create",
         "err_status": "Daemon is likely not running.",
         "btn_start_daemon": "Start Hamachi Daemon",
-        "daemon_starting": "Starting daemon..."
+        "daemon_starting": "Starting daemon...",
+        "registering": "Registering with Hamachi..."
     },
     "ru": {
         "title": "Hanuchi",
@@ -60,7 +64,7 @@ TRANSLATIONS = {
         "delete": "Удалить сеть",
         "join": "Подключиться",
         "create": "Создать сеть",
-        "pass_opt": "Пароль (необязательно)",
+        "pass_opt": "Пароль (необязательно)",  # nosec B105 - UI label, not a credential
         "settings": "Настройки",
         "language": "Язык",
         "restart_msg": "Перезапустите приложение для смены языка.",
@@ -68,7 +72,8 @@ TRANSLATIONS = {
         "btn_create": "Создать",
         "err_status": "Демон Hamachi не запущен.",
         "btn_start_daemon": "Запустить демон Hamachi",
-        "daemon_starting": "Запуск демона..."
+        "daemon_starting": "Запуск демона...",
+        "registering": "Регистрация в Hamachi..."
     }
 }
 
@@ -80,17 +85,20 @@ class ConfigManager:
         if not os.path.exists(CONFIG_FILE):
             sys_lang = "en"
             try:
-                loc = locale.getdefaultlocale()[0]
-                if loc and "ru" in loc.lower():
+                loc = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES")
+                       or os.environ.get("LANG") or "")
+                if "ru" in loc.lower():
                     sys_lang = "ru"
-            except: pass
+            except Exception as e:
+                log(f"Locale detection failed: {e}")
             default_conf = {"language": sys_lang}
             ConfigManager.save(default_conf)
             return default_conf
         try:
             with open(CONFIG_FILE, 'r') as f:
                 return json.load(f)
-        except:
+        except (OSError, ValueError) as e:
+            log(f"Failed to read config, using defaults: {e}")
             return {"language": "en"}
 
     @staticmethod
@@ -98,7 +106,8 @@ class ConfigManager:
         try:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(conf, f)
-        except: pass
+        except OSError as e:
+            log(f"Failed to save config: {e}")
 
 CURRENT_CONFIG = ConfigManager.load()
 LANG_CODE = CURRENT_CONFIG.get("language", "en")
@@ -106,9 +115,6 @@ if LANG_CODE not in TRANSLATIONS: LANG_CODE = "en"
 
 def tr(key):
     return TRANSLATIONS[LANG_CODE].get(key, key)
-
-def log(msg):
-    print(f"[Hanuchi] {msg}", flush=True)
 
 class HamachiBackend:
     @staticmethod
@@ -123,8 +129,11 @@ class HamachiBackend:
         cmd = [exe] + args
         log(f"Exec: {' '.join(cmd)}")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603
             return result.stdout
+        except subprocess.TimeoutExpired:
+            log("EXEC TIMEOUT: hamachi did not respond in time")
+            return ""
         except Exception as e:
             log(f"CRITICAL EXEC ERROR: {e}")
             return ""
@@ -143,13 +152,30 @@ class HamachiBackend:
     @staticmethod
     def start_daemon_pkexec():
         log("Attempting to start daemon via pkexec...")
+        pkexec = shutil.which("pkexec") or "/usr/bin/pkexec"
+        systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
         try:
-            subprocess.run(["pkexec", "systemctl", "start", "logmein-hamachi"], check=True)
-            time.sleep(2) 
+            subprocess.run([pkexec, systemctl, "start", "logmein-hamachi"],  # nosec B603
+                           check=True, timeout=120)
+            time.sleep(2)
             return True
-        except subprocess.CalledProcessError:
-            log("Failed to start daemon via pkexec (user cancelled or error)")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            log(f"Failed to start daemon via pkexec (cancelled or error): {e}")
             return False
+
+    @staticmethod
+    def is_registered():
+        """A Hamachi node gets a persistent 'client id' only after it has been
+        registered with the LogMeIn network at least once."""
+        info = HamachiBackend.get_self_info()
+        if not info:
+            return None  # daemon not running / status unknown
+        return "client id" in info
+
+    @staticmethod
+    def login():
+        # 'hamachi login' both registers the node on first use and brings it online.
+        return HamachiBackend._run_hamachi(['login'])
 
     @staticmethod
     def get_networks():
@@ -178,7 +204,8 @@ class HamachiBackend:
                     current_net = {'id': net_id, 'name': net_name, 'capacity': capacity, 'status': status, 'members': []}
                     networks.append(current_net)
                     continue
-                except: pass
+                except (IndexError, ValueError) as e:
+                    log(f"Failed to parse network line '{line}': {e}")
             if current_net is not None and ("25." in line or "2620:" in line):
                 parts = line.split()
                 if len(parts) >= 3:
@@ -270,6 +297,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
         self.set_resizable(False)
         self.set_icon_name("hanuchi")
         self.auto_start_attempted = False
+        self.auto_login_attempted = False
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.set_content(main_box)
@@ -354,6 +382,15 @@ class HanuchiWindow(Adw.ApplicationWindow):
             GLib.idle_add(self.refresh_data, None)
         threading.Thread(target=job, daemon=True).start()
 
+    def register_bg(self):
+        self.spinner.start()
+        self.clean_box(self.dash_page)
+        l = Gtk.Label(label=tr("registering")); l.add_css_class("title-2"); self.dash_page.append(l)
+        def job():
+            HamachiBackend.login()
+            GLib.idle_add(self.refresh_data, None)
+        threading.Thread(target=job, daemon=True).start()
+
     def refresh_data(self, widget):
         info = HamachiBackend.get_self_info()
         self.clean_box(self.dash_page)
@@ -374,7 +411,15 @@ class HanuchiWindow(Adw.ApplicationWindow):
             self.spinner.stop()
             return
         else:
-            self.auto_start_attempted = True 
+            self.auto_start_attempted = True
+
+        # Auto-register the node with Hamachi on first run if it has never been
+        # registered (no persistent 'client id' yet). 'hamachi login' registers
+        # and brings the node online in one step.
+        if "client id" not in info and not self.auto_login_attempted:
+            self.auto_login_attempted = True
+            self.register_bg()
+            return
 
         title = Gtk.Label(label=tr("status_sys"), xalign=0); title.add_css_class("title-1"); self.dash_page.append(title)
         grp = Adw.PreferencesGroup(); self.dash_page.append(grp)
