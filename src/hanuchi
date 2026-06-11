@@ -43,7 +43,6 @@ TRANSLATIONS = {
         "pass_opt": "Password (Optional)",  # nosec B105 - UI label, not a credential
         "settings": "Settings",
         "language": "Language",
-        "restart_msg": "Restart application to apply language changes.",
         "btn_join": "Join",
         "btn_create": "Create",
         "err_status": "Daemon is likely not running.",
@@ -74,7 +73,6 @@ TRANSLATIONS = {
         "pass_opt": "Пароль (необязательно)",  # nosec B105 - UI label, not a credential
         "settings": "Настройки",
         "language": "Язык",
-        "restart_msg": "Перезапустите приложение для смены языка.",
         "btn_join": "Войти",
         "btn_create": "Создать",
         "err_status": "Демон Hamachi не запущен.",
@@ -125,6 +123,11 @@ if LANG_CODE not in TRANSLATIONS: LANG_CODE = "en"
 
 def tr(key):
     return TRANSLATIONS[LANG_CODE].get(key, key)
+
+def set_language(code):
+    global LANG_CODE
+    if code in TRANSLATIONS:
+        LANG_CODE = code
 
 class HamachiBackend:
     @staticmethod
@@ -241,6 +244,7 @@ class HamachiBackend:
 class SettingsDialog(Gtk.Window):
     def __init__(self, parent):
         super().__init__(transient_for=parent, modal=True, title=tr("settings"))
+        self.parent_win = parent
         self.set_default_size(300, 200)
         self.set_resizable(False)
         
@@ -248,9 +252,9 @@ class SettingsDialog(Gtk.Window):
         box.set_margin_top(20); box.set_margin_bottom(20); box.set_margin_start(20); box.set_margin_end(20)
         self.set_child(box)
 
-        lbl = Gtk.Label(label=tr("language"), xalign=0)
-        lbl.add_css_class("heading")
-        box.append(lbl)
+        self.lang_lbl = Gtk.Label(label=tr("language"), xalign=0)
+        self.lang_lbl.add_css_class("heading")
+        box.append(self.lang_lbl)
 
         self.combo = Gtk.ComboBoxText()
         self.combo.append("en", "English")
@@ -259,22 +263,20 @@ class SettingsDialog(Gtk.Window):
         self.combo.connect("changed", self.on_change)
         box.append(self.combo)
 
-        self.info_lbl = Gtk.Label(label="")
-        self.info_lbl.set_wrap(True)
-        self.info_lbl.add_css_class("dim-label")
-        box.append(self.info_lbl)
-
     def on_change(self, combo):
         new_lang = combo.get_active_id()
-        if not new_lang:
+        if not new_lang or new_lang == LANG_CODE:
             return
         cfg = ConfigManager.load()
-        if new_lang != cfg.get("language"):
-            cfg["language"] = new_lang
-            ConfigManager.save(cfg)
-        # A restart is only needed when the choice differs from the language
-        # the app is currently running with.
-        self.info_lbl.set_label(tr("restart_msg") if new_lang != LANG_CODE else "")
+        cfg["language"] = new_lang
+        ConfigManager.save(cfg)
+        set_language(new_lang)
+        # Apply the new language live: update this dialog's own labels and ask
+        # the main window to rebuild its menu and content.
+        self.set_title(tr("settings"))
+        self.lang_lbl.set_label(tr("language"))
+        if self.parent_win:
+            self.parent_win.apply_language()
 
 class NetworkDialog(Gtk.Window):
     def __init__(self, parent, action_name, action_code, callback):
@@ -314,16 +316,9 @@ class HanuchiWindow(Adw.ApplicationWindow):
         header_l = Gtk.HeaderBar(); header_l.set_show_title_buttons(False)
         home_btn = Gtk.Button(icon_name="go-home-symbolic"); home_btn.connect("clicked", self.go_dashboard); header_l.pack_start(home_btn)
         
-        add_btn = Gtk.MenuButton(icon_name="open-menu-symbolic")
-        menu = Gio.Menu()
-        menu.append(tr("join"), "app.join_network")
-        menu.append(tr("create"), "app.create_network")
-        section = Gio.Menu()
-        section.append(tr("settings"), "app.settings")
-        section.append(tr("about"), "app.about")
-        menu.append_section(None, section)
-        
-        add_btn.set_menu_model(menu); header_l.pack_start(add_btn)
+        self.add_btn = Gtk.MenuButton(icon_name="open-menu-symbolic")
+        self.add_btn.set_menu_model(self.build_menu())
+        header_l.pack_start(self.add_btn)
         refresh_btn = Gtk.Button(icon_name="view-refresh-symbolic"); refresh_btn.connect("clicked", self.refresh_data); header_l.pack_end(refresh_btn)
         self.list_box = Gtk.ListBox(); self.list_box.add_css_class("navigation-sidebar"); self.list_box.connect("row-selected", self.on_network_selected)
         scrolled = Gtk.ScrolledWindow(); scrolled.set_child(self.list_box); scrolled.set_vexpand(True)
@@ -366,6 +361,23 @@ class HanuchiWindow(Adw.ApplicationWindow):
 
         self.networks_data = []; self.current_net_id = None
         GLib.idle_add(self.refresh_data, None)
+
+    def build_menu(self):
+        menu = Gio.Menu()
+        menu.append(tr("join"), "app.join_network")
+        menu.append(tr("create"), "app.create_network")
+        section = Gio.Menu()
+        section.append(tr("settings"), "app.settings")
+        section.append(tr("about"), "app.about")
+        menu.append_section(None, section)
+        return menu
+
+    def apply_language(self):
+        # Rebuild everything that holds translated text: title, hamburger menu
+        # and the dynamic dashboard/details content (re-rendered by refresh).
+        self.set_title(tr("title"))
+        self.add_btn.set_menu_model(self.build_menu())
+        self.refresh_data(None)
 
     def go_dashboard(self, btn):
         self.list_box.unselect_all()
