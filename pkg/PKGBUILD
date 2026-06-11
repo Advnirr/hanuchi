@@ -9,7 +9,7 @@ license=('MIT')
 depends=('python' 'gtk4' 'libadwaita' 'python-gobject' 'logmein-hamachi')
 makedepends=('git')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/Advnirr/hanuchi/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('edcd9b78fa4e4e19d08be1f19e088a91a6fd1434479ff9a4e05b04e047981135')
 
 package() {
     cd "${srcdir}/${pkgname}-${pkgver}"
