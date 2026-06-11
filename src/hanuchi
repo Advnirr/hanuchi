@@ -12,6 +12,10 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+APP_VERSION = "1.3.0"
+REPO_URL = "https://github.com/Advnirr/hanuchi"
+WEBSITE_URL = "https://advnirr.org"
+
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "hanuchi")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
@@ -45,7 +49,10 @@ TRANSLATIONS = {
         "err_status": "Daemon is likely not running.",
         "btn_start_daemon": "Start Hamachi Daemon",
         "daemon_starting": "Starting daemon...",
-        "registering": "Registering with Hamachi..."
+        "registering": "Registering with Hamachi...",
+        "about": "About Hanuchi",
+        "about_repo": "Source Code",
+        "about_comment": "Minimalist GTK4 frontend for LogMeIn Hamachi"
     },
     "ru": {
         "title": "Hanuchi",
@@ -73,7 +80,10 @@ TRANSLATIONS = {
         "err_status": "Демон Hamachi не запущен.",
         "btn_start_daemon": "Запустить демон Hamachi",
         "daemon_starting": "Запуск демона...",
-        "registering": "Регистрация в Hamachi..."
+        "registering": "Регистрация в Hamachi...",
+        "about": "О программе",
+        "about_repo": "Исходный код",
+        "about_comment": "Минималистичный GTK4-интерфейс для LogMeIn Hamachi"
     }
 }
 
@@ -310,6 +320,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
         menu.append(tr("create"), "app.create_network")
         section = Gio.Menu()
         section.append(tr("settings"), "app.settings")
+        section.append(tr("about"), "app.about")
         menu.append_section(None, section)
         
         add_btn.set_menu_model(menu); header_l.pack_start(add_btn)
@@ -326,10 +337,10 @@ class HanuchiWindow(Adw.ApplicationWindow):
         
         self.stack = Gtk.Stack(); self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.dash_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        self.dash_page.set_margin_top(30); self.dash_page.set_margin_start(30); self.dash_page.set_margin_end(30)
+        self.dash_page.set_margin_top(30); self.dash_page.set_margin_start(30); self.dash_page.set_margin_end(30); self.dash_page.set_margin_bottom(30)
         self.stack.add_named(self.dash_page, "dashboard")
         self.net_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        self.net_page.set_margin_top(30); self.net_page.set_margin_start(30); self.net_page.set_margin_end(30)
+        self.net_page.set_margin_top(30); self.net_page.set_margin_start(30); self.net_page.set_margin_end(30); self.net_page.set_margin_bottom(30)
         self.stack.add_named(self.net_page, "details")
         content_box.append(self.stack)
 
@@ -349,12 +360,30 @@ class HanuchiWindow(Adw.ApplicationWindow):
         action_settings.connect("activate", lambda a,p: SettingsDialog(self).present())
         app.add_action(action_settings)
 
+        action_about = Gio.SimpleAction.new("about", None)
+        action_about.connect("activate", lambda a,p: self.show_about())
+        app.add_action(action_about)
+
         self.networks_data = []; self.current_net_id = None
         GLib.idle_add(self.refresh_data, None)
 
     def go_dashboard(self, btn):
         self.list_box.unselect_all()
         self.stack.set_visible_child_name("dashboard")
+
+    def show_about(self):
+        about = Adw.AboutDialog(
+            application_name="Hanuchi",
+            application_icon="hanuchi",
+            developer_name="Advnirr",
+            version=APP_VERSION,
+            comments=tr("about_comment"),
+            website=WEBSITE_URL,
+            issue_url=REPO_URL + "/issues",
+            license_type=Gtk.License.MIT_X11,
+        )
+        about.add_link(tr("about_repo"), REPO_URL)
+        about.present(self)
     def clean_box(self, box):
         while True:
             child = box.get_first_child()
