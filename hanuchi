@@ -190,7 +190,7 @@ class HamachiBackend:
                     status = "Ready"
                     if "status:" in rest:
                         status = rest.split('status:')[1].split(',')[0].strip()
-                    elif "owner" in rest:
+                    elif "this computer" in rest.lower():
                         status = "Hosted"
                     current_net = {'id': net_id, 'name': net_name, 'capacity': capacity, 'status': status, 'members': []}
                     networks.append(current_net)
@@ -199,10 +199,13 @@ class HamachiBackend:
                     log(f"Failed to parse network line '{line}': {e}")
             if current_net is not None and ("25." in line or "2620:" in line):
                 parts = line.split()
-                if len(parts) >= 3:
-                    ip = next((p for p in parts if p.startswith("25.") or p.startswith("2620:")), "Unknown")
-                    alias = parts[2] if len(parts) > 2 else "Unknown"
-                    current_net['members'].append({'id': 'N/A', 'alias': alias, 'ip': ip})
+                # Member line columns: <member id> <nickname...> <ip> [alias: ...]
+                ip = next((p for p in parts if p.startswith("25.") or p.startswith("2620:")), None)
+                if ip is not None:
+                    ip_idx = parts.index(ip)
+                    member_id = parts[0] if ip_idx > 0 else "N/A"
+                    nick = " ".join(parts[1:ip_idx]).strip() or member_id
+                    current_net['members'].append({'id': member_id, 'alias': nick, 'ip': ip})
         return networks
 
     @staticmethod
@@ -387,14 +390,23 @@ class HanuchiWindow(Adw.ApplicationWindow):
         threading.Thread(target=job, daemon=True).start()
 
     def refresh_data(self, widget):
-        info = HamachiBackend.get_self_info()
+        # Fetch hamachi state off the main thread so a slow/hung daemon can
+        # never freeze the UI; the rendering happens back on the main loop.
+        self.spinner.start()
+        def job():
+            info = HamachiBackend.get_self_info()
+            nets = HamachiBackend.get_networks() if (info and "client id" in info) else []
+            GLib.idle_add(self._apply_refresh, info, nets)
+        threading.Thread(target=job, daemon=True).start()
+
+    def _apply_refresh(self, info, nets):
         self.clean_box(self.dash_page)
-        
+
         if not info:
             if not self.auto_start_attempted:
                 self.auto_start_attempted = True
                 self.start_daemon_bg()
-                return
+                return False
             title = Gtk.Label(label=tr("status_sys"), xalign=0); title.add_css_class("title-1"); self.dash_page.append(title)
             err = Gtk.Label(label=tr("err_status")); err.add_css_class("error"); err.set_margin_bottom(15); self.dash_page.append(err)
             btn_start = Gtk.Button(label=tr("btn_start_daemon"))
@@ -404,7 +416,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
             self.dash_page.append(btn_start)
             self.clean_box(self.list_box)
             self.spinner.stop()
-            return
+            return False
         else:
             self.auto_start_attempted = True
 
@@ -414,7 +426,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
         if "client id" not in info and not self.auto_login_attempted:
             self.auto_login_attempted = True
             self.register_bg()
-            return
+            return False
 
         title = Gtk.Label(label=tr("status_sys"), xalign=0); title.add_css_class("title-1"); self.dash_page.append(title)
         grp = Adw.PreferencesGroup(); self.dash_page.append(grp)
@@ -435,7 +447,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
         if 'version' in info: self.add_row(grp, tr("ver"), info['version'])
 
         self.clean_box(self.list_box)
-        self.networks_data = HamachiBackend.get_networks()
+        self.networks_data = nets
         if not self.networks_data:
             lbl = Gtk.Label(label=tr("no_net")); lbl.add_css_class("dim-label"); lbl.set_margin_top(20); self.list_box.append(lbl)
             self.stack.set_visible_child_name("dashboard")
@@ -461,6 +473,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
             self.stack.set_visible_child_name("dashboard")
         else:
             self.on_network_selected(self.list_box, self.list_box.get_selected_row())
+        return False
 
     def on_network_selected(self, box, row):
         if not row or not hasattr(row, 'net_id'): return
