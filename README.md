@@ -17,6 +17,7 @@ Designed for modern GNOME environments (Wayland supported), strictly following t
 * Python 3.10+
 * `logmein-hamachi` (installed and configured)
 * `gtk4`, `libadwaita`, `python-gobject`
+* `meson` (build-time only)
 
 ## Installation
 
@@ -35,15 +36,13 @@ yay -S hanuchi
 ```
 
 ### Other Distributions (Ubuntu, Fedora, Debian)
-Use the universal installer script (requires root):
+Hanuchi uses the [Meson](https://mesonbuild.com/) build system:
 
 ```bash
-sudo ./install.sh
+meson setup build --prefix=/usr
+ninja -C build
+sudo ninja -C build install
 ```
-
-### Manual Installation
-1. Copy `hanuchi` to `/usr/bin/` and make it executable.
-2. Copy `hanuchi.desktop` to `/usr/share/applications/`.
 
 ## Removal
 
@@ -55,10 +54,10 @@ sudo pacman -R hanuchi
 ```
 
 ### Other Distributions
-Use the uninstaller script (requires root):
+From the build directory created during installation:
 
 ```bash
-sudo ./uninstall.sh
+sudo ninja -C build uninstall
 ```
 
 ## License

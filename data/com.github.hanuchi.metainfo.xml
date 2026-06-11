@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.hanuchi</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Hanuchi</name>
+  <summary>Minimalist GTK4 frontend for LogMeIn Hamachi</summary>
+  <description>
+    <p>
+      Hanuchi is a lightweight, utility-first GUI for managing LogMeIn Hamachi
+      networks on Linux. Designed for modern GNOME environments, it controls
+      the logmein-hamachi service via PolicyKit and lets you join, create,
+      leave and inspect networks.
+    </p>
+  </description>
+  <launchable type="desktop-id">hanuchi.desktop</launchable>
+  <url type="homepage">https://github.com/Advnirr/hanuchi</url>
+  <url type="bugtracker">https://github.com/Advnirr/hanuchi/issues</url>
+  <developer id="com.github.advnirr">
+    <name>Advnirr</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.3.0" date="2026-06-11"/>
+    <release version="1.2.0" date="2025-12-30"/>
+  </releases>
+</component>
