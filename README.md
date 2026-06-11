@@ -17,7 +17,7 @@ Designed for modern GNOME environments (Wayland supported), strictly following t
 * Python 3.10+
 * `logmein-hamachi` (installed and configured)
 * `gtk4`, `libadwaita`, `python-gobject`
-* `meson` (build-time only)
+* `meson`, `ninja` (build-time only)
 
 ## Installation
 
@@ -36,9 +36,11 @@ yay -S hanuchi
 ```
 
 ### Other Distributions (Ubuntu, Fedora, Debian)
-Hanuchi uses the [Meson](https://mesonbuild.com/) build system:
+Hanuchi uses the [Meson](https://mesonbuild.com/) build system. Clone the repository and build:
 
 ```bash
+git clone https://github.com/Advnirr/hanuchi.git
+cd hanuchi
 meson setup build --prefix=/usr
 ninja -C build
 sudo ninja -C build install
