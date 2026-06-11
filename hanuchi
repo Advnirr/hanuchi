@@ -164,15 +164,6 @@ class HamachiBackend:
             return False
 
     @staticmethod
-    def is_registered():
-        """A Hamachi node gets a persistent 'client id' only after it has been
-        registered with the LogMeIn network at least once."""
-        info = HamachiBackend.get_self_info()
-        if not info:
-            return None  # daemon not running / status unknown
-        return "client id" in info
-
-    @staticmethod
     def login():
         # 'hamachi login' both registers the node on first use and brings it online.
         return HamachiBackend._run_hamachi(['login'])
@@ -262,11 +253,15 @@ class SettingsDialog(Gtk.Window):
 
     def on_change(self, combo):
         new_lang = combo.get_active_id()
-        if new_lang != LANG_CODE:
-            cfg = ConfigManager.load()
+        if not new_lang:
+            return
+        cfg = ConfigManager.load()
+        if new_lang != cfg.get("language"):
             cfg["language"] = new_lang
             ConfigManager.save(cfg)
-            self.info_lbl.set_label(tr("restart_msg"))
+        # A restart is only needed when the choice differs from the language
+        # the app is currently running with.
+        self.info_lbl.set_label(tr("restart_msg") if new_lang != LANG_CODE else "")
 
 class NetworkDialog(Gtk.Window):
     def __init__(self, parent, action_name, action_code, callback):
@@ -280,7 +275,7 @@ class NetworkDialog(Gtk.Window):
         self.id_entry = Gtk.Entry(placeholder_text=tr("id"))
         self.pass_entry = Gtk.Entry(placeholder_text=tr("pass_opt")); self.pass_entry.set_visibility(False)
         box.append(Gtk.Label(label=tr("id"), xalign=0)); box.append(self.id_entry)
-        box.append(Gtk.Label(label="Password", xalign=0)); box.append(self.pass_entry)
+        box.append(Gtk.Label(label=tr("pass_opt"), xalign=0)); box.append(self.pass_entry)
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10); btn_box.set_halign(Gtk.Align.END)
         do_btn = Gtk.Button(label=action_code); do_btn.add_css_class("suggested-action")
         do_btn.connect("clicked", lambda x: self.on_confirm())
@@ -445,6 +440,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
             lbl = Gtk.Label(label=tr("no_net")); lbl.add_css_class("dim-label"); lbl.set_margin_top(20); self.list_box.append(lbl)
             self.stack.set_visible_child_name("dashboard")
         else:
+            row_to_select = None
             for net in self.networks_data:
                 row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
                 row.set_margin_top(10); row.set_margin_bottom(10); row.set_margin_start(10)
@@ -453,7 +449,13 @@ class HanuchiWindow(Adw.ApplicationWindow):
                 if net['status'] != "Ready": status_txt += f" • {net['status']}"
                 id_lbl = Gtk.Label(label=status_txt, xalign=0); id_lbl.add_css_class("caption"); id_lbl.add_css_class("dim-label"); row.append(id_lbl)
                 lrow = Gtk.ListBoxRow(); lrow.set_child(row); lrow.net_id = net['id']; self.list_box.append(lrow)
-        
+                if net['id'] == self.current_net_id:
+                    row_to_select = lrow
+            # Re-select the previously open network so a refresh (e.g. after a
+            # power toggle) does not kick the user back to the dashboard.
+            if row_to_select is not None:
+                self.list_box.select_row(row_to_select)
+
         self.spinner.stop()
         if not self.list_box.get_selected_row():
             self.stack.set_visible_child_name("dashboard")
