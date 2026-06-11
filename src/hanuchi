@@ -43,6 +43,15 @@ TRANSLATIONS = {
         "pass_opt": "Password (Optional)",  # nosec B105 - UI label, not a credential
         "settings": "Settings",
         "language": "Language",
+        "theme": "Theme",
+        "theme_system": "System",
+        "theme_light": "Light",
+        "theme_dark": "Dark",
+        "kick": "Kick",
+        "ban": "Ban",
+        "cancel": "Cancel",
+        "confirm_kick": "Kick {name} from this network?",
+        "confirm_ban": "Ban {name} from this network? They will no longer be able to join.",
         "btn_join": "Join",
         "btn_create": "Create",
         "err_status": "Daemon is likely not running.",
@@ -73,6 +82,15 @@ TRANSLATIONS = {
         "pass_opt": "Пароль (необязательно)",  # nosec B105 - UI label, not a credential
         "settings": "Настройки",
         "language": "Язык",
+        "theme": "Тема",
+        "theme_system": "Системная",
+        "theme_light": "Светлая",
+        "theme_dark": "Тёмная",
+        "kick": "Кикнуть",
+        "ban": "Забанить",
+        "cancel": "Отмена",
+        "confirm_kick": "Кикнуть {name} из этой сети?",
+        "confirm_ban": "Забанить {name} в этой сети? Он больше не сможет подключиться.",
         "btn_join": "Войти",
         "btn_create": "Создать",
         "err_status": "Демон Hamachi не запущен.",
@@ -128,6 +146,15 @@ def set_language(code):
     global LANG_CODE
     if code in TRANSLATIONS:
         LANG_CODE = code
+
+def apply_theme(theme):
+    sm = Adw.StyleManager.get_default()
+    if theme == "dark":
+        sm.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+    elif theme == "light":
+        sm.set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+    else:
+        sm.set_color_scheme(Adw.ColorScheme.DEFAULT)
 
 class HamachiBackend:
     @staticmethod
@@ -240,6 +267,12 @@ class HamachiBackend:
     @staticmethod
     def delete_network(nid):
         return HamachiBackend._run_hamachi(['delete', nid])
+    @staticmethod
+    def evict_member(nid, cid):
+        return HamachiBackend._run_hamachi(['evict', nid, cid])
+    @staticmethod
+    def reject_member(nid, cid):
+        return HamachiBackend._run_hamachi(['reject', nid, cid])
 
 class SettingsDialog(Gtk.Window):
     def __init__(self, parent):
@@ -263,6 +296,21 @@ class SettingsDialog(Gtk.Window):
         self.combo.connect("changed", self.on_change)
         box.append(self.combo)
 
+        self.theme_lbl = Gtk.Label(label=tr("theme"), xalign=0)
+        self.theme_lbl.add_css_class("heading")
+        self.theme_lbl.set_margin_top(6)
+        box.append(self.theme_lbl)
+
+        self.theme_combo = Gtk.ComboBoxText()
+        self._populate_theme_combo()
+        self.theme_combo.set_active_id(ConfigManager.load().get("theme", "system"))
+        self.theme_combo.connect("changed", self.on_theme_change)
+        box.append(self.theme_combo)
+
+    def _populate_theme_combo(self):
+        for tid in ("system", "light", "dark"):
+            self.theme_combo.append(tid, tr("theme_" + tid))
+
     def on_change(self, combo):
         new_lang = combo.get_active_id()
         if not new_lang or new_lang == LANG_CODE:
@@ -275,8 +323,26 @@ class SettingsDialog(Gtk.Window):
         # the main window to rebuild its menu and content.
         self.set_title(tr("settings"))
         self.lang_lbl.set_label(tr("language"))
+        self.theme_lbl.set_label(tr("theme"))
+        # Relabel the theme options in the new language (keep the selection).
+        active = self.theme_combo.get_active_id()
+        self.theme_combo.handler_block_by_func(self.on_theme_change)
+        self.theme_combo.remove_all()
+        self._populate_theme_combo()
+        self.theme_combo.set_active_id(active)
+        self.theme_combo.handler_unblock_by_func(self.on_theme_change)
         if self.parent_win:
             self.parent_win.apply_language()
+
+    def on_theme_change(self, combo):
+        theme = combo.get_active_id()
+        if not theme:
+            return
+        cfg = ConfigManager.load()
+        if theme != cfg.get("theme"):
+            cfg["theme"] = theme
+            ConfigManager.save(cfg)
+        apply_theme(theme)
 
 class NetworkDialog(Gtk.Window):
     def __init__(self, parent, action_name, action_code, callback):
@@ -412,6 +478,53 @@ class HanuchiWindow(Adw.ApplicationWindow):
             lbl = Gtk.Label(label=str(value)); lbl.add_css_class("dim-label"); row.add_suffix(lbl)
         group.add(row)
 
+    def add_member_row(self, group, member, is_owner):
+        ip = member.get('ip', 'Unknown')
+        cid = member.get('id', 'N/A')
+        row = Adw.ActionRow()
+        row.set_title(member.get('alias', cid))
+        row.set_subtitle(ip)
+        # Owner-only moderation: kick (evict) and ban (reject) the member.
+        if is_owner and cid and cid != 'N/A':
+            ban = Gtk.Button(icon_name="action-unavailable-symbolic"); ban.add_css_class("flat")
+            ban.set_valign(Gtk.Align.CENTER); ban.set_tooltip_text(tr("ban"))
+            ban.connect("clicked", lambda b: self.confirm_member_action(member, "ban"))
+            row.add_suffix(ban)
+            kick = Gtk.Button(icon_name="list-remove-symbolic"); kick.add_css_class("flat")
+            kick.set_valign(Gtk.Align.CENTER); kick.set_tooltip_text(tr("kick"))
+            kick.connect("clicked", lambda b: self.confirm_member_action(member, "kick"))
+            row.add_suffix(kick)
+        copy = Gtk.Button(icon_name="edit-copy-symbolic"); copy.add_css_class("flat")
+        copy.set_valign(Gtk.Align.CENTER)
+        copy.connect("clicked", lambda b: Gdk.Display.get_default().get_clipboard().set(str(ip)))
+        row.add_suffix(copy)
+        group.add(row)
+
+    def confirm_member_action(self, member, action):
+        nid = self.current_net_id
+        cid = member.get('id')
+        if not nid or not cid or cid == 'N/A':
+            return
+        name = member.get('alias', cid)
+        dialog = Adw.AlertDialog(
+            heading=tr(action),
+            body=tr("confirm_" + action).format(name=name),
+        )
+        dialog.add_response("cancel", tr("cancel"))
+        dialog.add_response("ok", tr(action))
+        dialog.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        def on_resp(d, resp):
+            if resp != "ok":
+                return
+            if action == "kick":
+                self.run_bg(lambda: HamachiBackend.evict_member(nid, cid))
+            else:
+                self.run_bg(lambda: HamachiBackend.reject_member(nid, cid))
+        dialog.connect("response", on_resp)
+        dialog.present(self)
+
     def start_daemon_bg(self):
         self.spinner.start()
         self.clean_box(self.dash_page)
@@ -529,13 +642,13 @@ class HanuchiWindow(Adw.ApplicationWindow):
         self.add_row(grp_info, tr("id"), net['id'], copy=True)
         self.add_row(grp_info, tr("cap"), net['capacity'])
         self.add_row(grp_info, tr("status"), net['status'])
+        is_owner = (net['status'] == 'Hosted')
         lbl_mem = Gtk.Label(label=tr("members"), xalign=0); lbl_mem.add_css_class("title-2"); lbl_mem.set_margin_bottom(5); self.net_page.append(lbl_mem)
         grp_mem = Adw.PreferencesGroup(); self.net_page.append(grp_mem)
         if not net['members']: grp_mem.set_description(tr("no_peers"))
         else:
-            for m in net['members']: self.add_row(grp_mem, m['alias'], m['ip'], copy=True)
-        
-        is_owner = (net['status'] == 'Hosted')
+            for m in net['members']: self.add_member_row(grp_mem, m, is_owner)
+
         if is_owner:
             btn_action = Gtk.Button(label=tr("delete")); btn_action.add_css_class("destructive-action")
             btn_action.connect("clicked", lambda b: self.run_bg(lambda: HamachiBackend.delete_network(self.current_net_id)))
@@ -562,6 +675,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
 class HanuchiApp(Adw.Application):
     def __init__(self): super().__init__(application_id="com.github.hanuchi", flags=Gio.ApplicationFlags.FLAGS_NONE)
     def do_activate(self):
+        apply_theme(ConfigManager.load().get("theme", "system"))
         win = self.props.active_window
         if not win: win = HanuchiWindow(self)
         win.present()
