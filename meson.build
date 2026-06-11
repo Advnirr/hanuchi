@@ -1,5 +1,5 @@
 project('hanuchi',
-  version: '1.3.0',
+  version: '2.0.0',
   license: 'MIT',
   meson_version: '>= 0.59.0',
 )
