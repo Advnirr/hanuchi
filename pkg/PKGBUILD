@@ -9,7 +9,7 @@ license=('MIT')
 depends=('python' 'gtk4' 'libadwaita' 'python-gobject' 'logmein-hamachi')
 makedepends=('meson')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/Advnirr/hanuchi/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('82bd710131824c40c6a61fed5047cea6c31cd0eb642ae9e26b9a21024e55205c')
 
 build() {
     meson setup "${pkgname}-${pkgver}" build \
