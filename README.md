@@ -62,5 +62,16 @@ From the build directory created during installation:
 sudo ninja -C build uninstall
 ```
 
+## Support
+
+If Hanuchi made Hamachi on Linux less painful, you can support continued
+development directly:
+
+**USDT** · TON network
+
+```
+UQDFela8stCZykNL2cLw2erPkzjAgSf-GLXoJuiTEmEckTNB
+```
+
 ## License
 MIT License.
