@@ -1,12 +1,19 @@
 project('hanuchi',
-  version: '2.0.0',
+  version: '2.0.1',
   license: 'MIT',
   meson_version: '>= 0.59.0',
 )
 
 gnome = import('gnome')
 
-install_data('src/hanuchi',
+conf = configuration_data()
+conf.set('VERSION', meson.project_version())
+
+configure_file(
+  input: 'src/hanuchi',
+  output: 'hanuchi',
+  configuration: conf,
+  install: true,
   install_dir: get_option('bindir'),
   install_mode: 'rwxr-xr-x',
 )

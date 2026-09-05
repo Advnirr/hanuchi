@@ -5,6 +5,7 @@ import os
 import shutil
 import threading
 import json
+import re
 import time
 import gi
 
@@ -12,9 +13,20 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
-APP_VERSION = "2.0.0"
+# Substituted by meson configure_file(); stays literal in a source checkout.
+APP_VERSION = "@VERSION@"
+if APP_VERSION.startswith("@"):
+    APP_VERSION = "dev"
 REPO_URL = "https://github.com/Advnirr/hanuchi"
 WEBSITE_URL = "https://advnirr.org"
+
+# Adw.AboutDialog / Adw.AlertDialog need libadwaita >= 1.5; the AboutWindow /
+# MessageDialog spellings exist from 1.2 and are used as a fallback so the app
+# stays usable on older distro releases.
+HAS_ADW_DIALOGS = hasattr(Adw, "AboutDialog") and hasattr(Adw, "AlertDialog")
+
+# Hamachi client ids are always three dash-separated triplets.
+CLIENT_ID_RE = re.compile(r"^\d{3}-\d{3}-\d{3}$")
 
 CONFIG_DIR = os.path.join(GLib.get_user_config_dir(), "hanuchi")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
@@ -51,7 +63,10 @@ TRANSLATIONS = {
         "ban": "Ban",
         "cancel": "Cancel",
         "confirm_kick": "Kick {name} from this network?",
-        "confirm_ban": "Ban {name} from this network? They will no longer be able to join.",
+        "confirm_ban": "Ban {name}? They will be removed and the network locked, so joining will require your approval.",
+        "kicked": "{name} was removed from the network",
+        "banned": "{name} was removed; the network now requires approval to join",
+        "action_failed": "Action failed: {msg}",
         "btn_join": "Join",
         "btn_create": "Create",
         "err_status": "Daemon is likely not running.",
@@ -90,7 +105,10 @@ TRANSLATIONS = {
         "ban": "Забанить",
         "cancel": "Отмена",
         "confirm_kick": "Кикнуть {name} из этой сети?",
-        "confirm_ban": "Забанить {name} в этой сети? Он больше не сможет подключиться.",
+        "confirm_ban": "Забанить {name}? Участник будет удалён, а сеть заблокирована — вход только с вашего одобрения.",
+        "kicked": "{name} удалён из сети",
+        "banned": "{name} удалён; для входа в сеть теперь нужно ваше одобрение",
+        "action_failed": "Не удалось выполнить: {msg}",
         "btn_join": "Войти",
         "btn_create": "Создать",
         "err_status": "Демон Hamachi не запущен.",
@@ -158,15 +176,16 @@ def apply_theme(theme):
 
 class HamachiBackend:
     @staticmethod
-    def _run_hamachi(args):
+    def _find_exe():
         paths = ["/usr/bin/hamachi", "/opt/logmein-hamachi/bin/hamachi", "hamachi"]
-        exe = None
         for p in paths:
             if os.path.exists(p) and os.access(p, os.X_OK):
-                exe = p
-                break
-        if not exe: exe = "hamachi"
-        cmd = [exe] + args
+                return p
+        return "hamachi"
+
+    @staticmethod
+    def _run_hamachi(args):
+        cmd = [HamachiBackend._find_exe()] + args
         log(f"Exec: {' '.join(cmd)}")
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603
@@ -177,6 +196,29 @@ class HamachiBackend:
         except Exception as e:
             log(f"CRITICAL EXEC ERROR: {e}")
             return ""
+
+    @staticmethod
+    def _exec(args):
+        """Like _run_hamachi, but reports failures instead of swallowing them.
+
+        hamachi exits 0 even when a command is refused (".. failed, not an
+        owner"), so the output is inspected as well as the return code.
+        """
+        cmd = [HamachiBackend._find_exe()] + args
+        log(f"Exec: {' '.join(cmd)}")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603
+        except subprocess.TimeoutExpired:
+            log("EXEC TIMEOUT: hamachi did not respond in time")
+            return False, "timeout"
+        except Exception as e:
+            log(f"CRITICAL EXEC ERROR: {e}")
+            return False, str(e)
+        out = " ".join((r.stdout + r.stderr).split())[:200]
+        ok = r.returncode == 0 and "failed" not in out.lower()
+        if not ok:
+            log(f"Command failed (rc={r.returncode}): {out}")
+        return ok, out
 
     @staticmethod
     def get_self_info():
@@ -243,8 +285,14 @@ class HamachiBackend:
                 ip = next((p for p in parts if p.startswith("25.") or p.startswith("2620:")), None)
                 if ip is not None:
                     ip_idx = parts.index(ip)
-                    member_id = parts[0] if ip_idx > 0 else "N/A"
-                    nick = " ".join(parts[1:ip_idx]).strip() or member_id
+                    # Online/offline peers are prefixed with a status marker
+                    # ("* 123-456-789 nick 25.x.x.x"), so locate the id by shape
+                    # instead of assuming it is the first column.
+                    id_idx = next((i for i, t in enumerate(parts[:ip_idx])
+                                   if CLIENT_ID_RE.match(t)), None)
+                    member_id = parts[id_idx] if id_idx is not None else "N/A"
+                    nick_start = (id_idx + 1) if id_idx is not None else 0
+                    nick = " ".join(parts[nick_start:ip_idx]).strip() or member_id
                     current_net['members'].append({'id': member_id, 'alias': nick, 'ip': ip})
         return networks
 
@@ -269,10 +317,16 @@ class HamachiBackend:
         return HamachiBackend._run_hamachi(['delete', nid])
     @staticmethod
     def evict_member(nid, cid):
-        return HamachiBackend._run_hamachi(['evict', nid, cid])
+        return HamachiBackend._exec(['evict', nid, cid])
     @staticmethod
-    def reject_member(nid, cid):
-        return HamachiBackend._run_hamachi(['reject', nid, cid])
+    def ban_member(nid, cid):
+        # Hamachi has no per-member ban: 'reject' only declines *pending* join
+        # requests. Evict the peer, then lock the network to manual approval so
+        # it cannot simply rejoin.
+        ok, msg = HamachiBackend._exec(['evict', nid, cid])
+        if not ok:
+            return ok, msg
+        return HamachiBackend._exec(['set-access', nid, 'lock', 'manual'])
 
 class SettingsDialog(Gtk.Window):
     def __init__(self, parent):
@@ -376,7 +430,9 @@ class HanuchiWindow(Adw.ApplicationWindow):
         self.auto_login_attempted = False
 
         main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        self.set_content(main_box)
+        self.toasts = Adw.ToastOverlay()
+        self.toasts.set_child(main_box)
+        self.set_content(self.toasts)
 
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); sidebar.set_size_request(250, -1)
         header_l = Gtk.HeaderBar(); header_l.set_show_title_buttons(False)
@@ -450,7 +506,7 @@ class HanuchiWindow(Adw.ApplicationWindow):
         self.stack.set_visible_child_name("dashboard")
 
     def show_about(self):
-        about = Adw.AboutDialog(
+        props = dict(
             application_name="Hanuchi",
             application_icon="hanuchi",
             developer_name="Advnirr",
@@ -460,8 +516,17 @@ class HanuchiWindow(Adw.ApplicationWindow):
             issue_url=REPO_URL + "/issues",
             license_type=Gtk.License.MIT_X11,
         )
-        about.add_link(tr("about_repo"), REPO_URL)
-        about.present(self)
+        if HAS_ADW_DIALOGS:
+            about = Adw.AboutDialog(**props)
+            about.add_link(tr("about_repo"), REPO_URL)
+            about.present(self)
+        else:
+            about = Adw.AboutWindow(transient_for=self, modal=True, **props)
+            about.add_link(tr("about_repo"), REPO_URL)
+            about.present()
+
+    def toast(self, text):
+        self.toasts.add_toast(Adw.Toast.new(text))
     def clean_box(self, box):
         while True:
             child = box.get_first_child()
@@ -484,8 +549,9 @@ class HanuchiWindow(Adw.ApplicationWindow):
         row = Adw.ActionRow()
         row.set_title(member.get('alias', cid))
         row.set_subtitle(ip)
-        # Owner-only moderation: kick (evict) and ban (reject) the member.
-        if is_owner and cid and cid != 'N/A':
+        # Owner-only moderation. A malformed id would make hamachi reject the
+        # command, so the buttons only appear once the id parsed cleanly.
+        if is_owner and CLIENT_ID_RE.match(cid or ''):
             ban = Gtk.Button(icon_name="action-unavailable-symbolic"); ban.add_css_class("flat")
             ban.set_valign(Gtk.Align.CENTER); ban.set_tooltip_text(tr("ban"))
             ban.connect("clicked", lambda b: self.confirm_member_action(member, "ban"))
@@ -503,13 +569,16 @@ class HanuchiWindow(Adw.ApplicationWindow):
     def confirm_member_action(self, member, action):
         nid = self.current_net_id
         cid = member.get('id')
-        if not nid or not cid or cid == 'N/A':
+        if not nid or not CLIENT_ID_RE.match(cid or ''):
             return
         name = member.get('alias', cid)
-        dialog = Adw.AlertDialog(
-            heading=tr(action),
-            body=tr("confirm_" + action).format(name=name),
-        )
+        heading = tr(action)
+        body = tr("confirm_" + action).format(name=name)
+        if HAS_ADW_DIALOGS:
+            dialog = Adw.AlertDialog(heading=heading, body=body)
+        else:
+            dialog = Adw.MessageDialog(transient_for=self, modal=True,
+                                       heading=heading, body=body)
         dialog.add_response("cancel", tr("cancel"))
         dialog.add_response("ok", tr(action))
         dialog.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE)
@@ -518,12 +587,22 @@ class HanuchiWindow(Adw.ApplicationWindow):
         def on_resp(d, resp):
             if resp != "ok":
                 return
-            if action == "kick":
-                self.run_bg(lambda: HamachiBackend.evict_member(nid, cid))
-            else:
-                self.run_bg(lambda: HamachiBackend.reject_member(nid, cid))
+            done_key = "kicked" if action == "kick" else "banned"
+            call = HamachiBackend.evict_member if action == "kick" else HamachiBackend.ban_member
+            self.run_bg(lambda: call(nid, cid),
+                        lambda res: self.report_action(res, done_key, name))
         dialog.connect("response", on_resp)
-        dialog.present(self)
+        if HAS_ADW_DIALOGS:
+            dialog.present(self)
+        else:
+            dialog.present()
+
+    def report_action(self, result, done_key, name):
+        ok, msg = result
+        if ok:
+            self.toast(tr(done_key).format(name=name))
+        else:
+            self.toast(tr("action_failed").format(msg=msg or "unknown error"))
 
     def start_daemon_bg(self):
         self.spinner.start()
@@ -663,11 +742,18 @@ class HanuchiWindow(Adw.ApplicationWindow):
         cmd = 'logoff' if getattr(self.power_btn, 'is_online', False) else 'login'
         self.run_bg(lambda: HamachiBackend.run_cmd_bg(cmd))
     
-    def run_bg(self, func):
+    def run_bg(self, func, on_result=None):
         def job():
-            func()
+            result = func()
             time.sleep(1.0)
-            GLib.idle_add(lambda: (self.spinner.stop(), self.power_btn.set_sensitive(True), self.refresh_data(None)))
+            def finish():
+                self.spinner.stop()
+                self.power_btn.set_sensitive(True)
+                self.refresh_data(None)
+                if on_result is not None:
+                    on_result(result)
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(finish)
         
         self.spinner.start()
         threading.Thread(target=job, daemon=True).start()

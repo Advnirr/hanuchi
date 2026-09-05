@@ -16,7 +16,7 @@ Designed for modern GNOME environments (Wayland supported), strictly following t
 ## Requirements
 * Python 3.10+
 * `logmein-hamachi` (installed and configured)
-* `gtk4`, `libadwaita`, `python-gobject`
+* `gtk4`, `libadwaita` (>= 1.2), `python-gobject`
 * `meson`, `ninja` (build-time only)
 
 ## Installation
