@@ -2,6 +2,21 @@
 
 **Minimalist GTK4/Libadwaita frontend for LogMeIn Hamachi.**
 
+<p align="left">
+  <a href="https://github.com/Advnirr/hanuchi/releases">
+    <img src="https://img.shields.io/badge/release-v2.0.1-007EC6?style=flat-square" alt="Release">
+  </a>
+  <a href="https://aur.archlinux.org/packages/hanuchi">
+    <img src="https://img.shields.io/aur/version/hanuchi?style=flat-square&label=AUR&color=1793D1" alt="AUR">
+  </a>
+  <a href="https://github.com/Advnirr/hanuchi/actions/workflows/checks.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/Advnirr/hanuchi/checks.yml?branch=main&style=flat-square&label=checks" alt="Checks">
+  </a>
+  <a href="https://github.com/Advnirr/hanuchi/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-FF5722?style=flat-square" alt="License">
+  </a>
+</p>
+
 ![Hanuchi Screenshot](assets/screenshot.png)
 
 Hanuchi is a lightweight, utility-first GUI for managing LogMeIn Hamachi networks on Linux.
