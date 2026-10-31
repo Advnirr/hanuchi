@@ -1,5 +1,5 @@
 Name:           hanuchi
-Version:        2.0.1
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        Minimalist GTK4 frontend for LogMeIn Hamachi
 License:        MIT

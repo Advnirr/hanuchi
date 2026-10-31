@@ -6,7 +6,7 @@ A small GTK4/Libadwaita frontend for LogMeIn Hamachi on Linux. It shows your net
 
 <p align="left">
   <a href="https://github.com/Advnirr/hanuchi/releases">
-    <img src="https://img.shields.io/badge/release-v2.0.1-007EC6?style=flat-square" alt="Release">
+    <img src="https://img.shields.io/badge/release-v2.1.0-007EC6?style=flat-square" alt="Release">
   </a>
   <a href="https://aur.archlinux.org/packages/hanuchi">
     <img src="https://img.shields.io/aur/version/hanuchi?style=flat-square&label=AUR&color=1793D1" alt="AUR">
