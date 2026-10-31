@@ -35,7 +35,25 @@ Also you can install Hanuchi from AUR using Yay:
 yay -S hanuchi
 ```
 
-### Other Distributions (Ubuntu, Fedora, Debian)
+### Debian / Ubuntu
+Download `hanuchi_<version>_all.deb` from [Releases](https://github.com/Advnirr/hanuchi/releases) and install it:
+
+```bash
+sudo apt install ./hanuchi_*_all.deb
+```
+
+### Fedora
+Download the `.rpm` from [Releases](https://github.com/Advnirr/hanuchi/releases) and install it:
+
+```bash
+sudo dnf install ./hanuchi-*.noarch.rpm
+```
+
+Hamachi itself is not in the Debian or Fedora repos: install `logmein-hamachi` from [vpn.net](https://vpn.net/linux) first.
+
+You can also build both packages with `tools/build-packages.sh`. It needs `meson`, `dpkg-deb` and `rpmbuild` and puts the files in `dist/`.
+
+### From Source (Any Distro)
 Hanuchi uses the [Meson](https://mesonbuild.com/) build system. Clone the repository and build:
 
 ```bash
@@ -55,7 +73,14 @@ Remove using the pacman package manager.
 sudo pacman -R hanuchi
 ```
 
-### Other Distributions
+### Debian / Ubuntu / Fedora
+
+```bash
+sudo apt remove hanuchi    # Debian / Ubuntu
+sudo dnf remove hanuchi    # Fedora
+```
+
+### Built From Source
 From the build directory created during installation:
 
 ```bash

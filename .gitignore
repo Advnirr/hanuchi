@@ -4,3 +4,6 @@ __pycache__/
 # Meson build directory
 /build/
 /builddir/
+
+# Built .deb / .rpm
+dist/

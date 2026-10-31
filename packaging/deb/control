@@ -1,0 +1,16 @@
+Package: hanuchi
+Version: 2.0.1
+Architecture: all
+Maintainer: Mikhail Mlhcnn <mikhail@advnirr.org>
+Section: net
+Priority: optional
+Homepage: https://github.com/Advnirr/hanuchi
+Depends: python3, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1
+Recommends: logmein-hamachi, pkexec | policykit-1
+Description: Minimalist GTK4 frontend for LogMeIn Hamachi
+ Shows your Hamachi networks and who is online in them, joins, creates,
+ leaves and deletes networks, and starts the logmein-hamachi service
+ through polkit.
+ .
+ Hamachi itself is not in the Debian archive: install the logmein-hamachi
+ package from vpn.net first.
