@@ -1,0 +1,29 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: pipx run ruff check src/hanuchi tools/bump-version.py tools/screenshots/shoot.py tests
+      - run: pipx run bandit -q src/hanuchi tools/bump-version.py tools/screenshots/shoot.py
+
+  test:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - run: >
+          apt-get update && apt-get install -y --no-install-recommends
+          meson python3 desktop-file-utils appstream
+      - uses: actions/checkout@v7
+      - run: python3 -m unittest discover -s tests -v
+      - run: meson setup build && meson test -C build --print-errorlogs
