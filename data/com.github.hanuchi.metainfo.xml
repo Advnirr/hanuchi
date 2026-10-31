@@ -20,6 +20,20 @@
     <name>Advnirr</name>
   </developer>
   <content_rating type="oars-1.1"/>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A network you own, with its members</caption>
+      <image>https://raw.githubusercontent.com/Advnirr/hanuchi/main/screenshots/network.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Your own status and addresses</caption>
+      <image>https://raw.githubusercontent.com/Advnirr/hanuchi/main/screenshots/dashboard.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A joined network in the dark theme</caption>
+      <image>https://raw.githubusercontent.com/Advnirr/hanuchi/main/screenshots/dark.png</image>
+    </screenshot>
+  </screenshots>
   <releases>
     <release version="2.0.1" date="2026-09-05"/>
     <release version="2.0.0" date="2026-06-11"/>

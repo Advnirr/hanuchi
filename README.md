@@ -1,6 +1,8 @@
 # Hanuchi
 
-**Minimalist GTK4/Libadwaita frontend for LogMeIn Hamachi.**
+<img src="data/icons/hicolor/scalable/apps/hanuchi.svg" align="right" width="160" alt="Hanuchi icon">
+
+A small GTK4/Libadwaita frontend for LogMeIn Hamachi on Linux. It shows your networks and who is online in them, and lets you join, create and manage networks without the terminal.
 
 <p align="left">
   <a href="https://github.com/Advnirr/hanuchi/releases">
@@ -17,16 +19,27 @@
   </a>
 </p>
 
-![Hanuchi Screenshot](assets/screenshot.png)
-
-Hanuchi is a lightweight, utility-first GUI for managing LogMeIn Hamachi networks on Linux.
-Designed for modern GNOME environments (Wayland supported), strictly following the philosophy of keeping the tool clean, native, and bloat-free.
-
 ## Features
-* **Native Experience:** Written in Python using GTK4 and Libadwaita.
-* **System Integration:** Controls the `logmein-hamachi` systemd service automatically via PolicyKit.
-* **Zero-config Setup:** Automatically starts the daemon and registers your node with Hamachi on first launch — no terminal required.
-* **Localization:** English / Russian
+* **Networks and peers:** every network with its members, who is online, and whether the link is direct or relayed. Refreshes on its own every few seconds.
+* **Moderation:** kick or ban members of networks you own, delete networks, leave the ones you joined.
+* **Copy in one click:** your IPv4 and IPv6 address, client ID, network IDs and peer addresses.
+* **Zero-config setup:** starts the `logmein-hamachi` service through polkit and registers the node on first launch.
+* **Native:** GTK4 and Libadwaita, light and dark themes, English and Russian.
+
+<details>
+<summary><b>Screenshots</b></summary>
+
+<img src="screenshots/network.png" alt="A network you own, with its members">
+
+<img src="screenshots/dashboard.png" alt="Your own status and addresses">
+
+<img src="screenshots/join.png" alt="Joining a network">
+
+<img src="screenshots/dark.png" alt="A joined network in the dark theme">
+
+</details>
+
+Screenshots are taken with `tools/screenshots/run.sh` in a clean container with stock Adwaita and made-up Hamachi data.
 
 ## Requirements
 * Python 3.10+

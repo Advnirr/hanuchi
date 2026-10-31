@@ -1,0 +1,21 @@
+# Stock GNOME look for the README screenshots: default Adwaita, Adwaita Sans,
+# no desktop theme or accent color from the host.
+FROM registry.fedoraproject.org/fedora:latest
+
+RUN dnf -y install --setopt=install_weak_deps=False \
+        python3-gobject gobject-introspection gtk4 libadwaita adwaita-icon-theme \
+        adwaita-sans-fonts adwaita-mono-fonts \
+        weston mesa-dri-drivers python3-pillow \
+    && dnf clean all
+
+COPY hamachi /usr/bin/hamachi
+
+# GNOME's defaults, which plain GTK does not apply on its own.
+RUN mkdir -p /etc/gtk-4.0 && printf '%s\n' \
+        '[Settings]' \
+        'gtk-font-name=Adwaita Sans 11' \
+        'gtk-decoration-layout=appmenu:close' \
+        'gtk-icon-theme-name=Adwaita' \
+        > /etc/gtk-4.0/settings.ini
+
+ENV LANG=C.UTF-8 XDG_RUNTIME_DIR=/tmp/xdg HOME=/tmp/home GSK_RENDERER=cairo
